@@ -1,0 +1,43 @@
+- name: Ejemplo de creación de instancia ec2 y un sg
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  vars:
+    estado: absent
+  tasks:
+  - name: Crear una nueva clave SSH
+    amazon.aws.ec2_key:
+      name: key-nicolas-osorio
+      state: "{{estado}}"
+    register: keypair
+
+  - name: Escribir la clave en un archivo
+    ansible.builtin.copy:
+      content: "{{ keypair.key.private_key }}"
+      dest: ./key-nicolas-osorio
+      mode: '0600'
+    when: keypair and keypair.changed
+
+  - name: Crear Security Group
+    amazon.aws.ec2_group:
+      name: "my-security-group"
+      description: "My security group description"
+      rules: 
+        - proto: tcp
+          from_port: 22
+          to_port: 22
+          cidr_ip: 0.0.0.0/0
+      state: "{{estado}}"
+    register: sg_result
+
+  - name: Crear instancia ec2
+    amazon.aws.ec2_instance:
+      key_name: "{{ keypair.key.name }}"
+      instance_type: "t2.micro"
+      image_id: "ami-0c94855ba95c71c99"
+      security_group: "{{ sg_result.group_id }}"
+      wait: true
+      state: "{{estado}}"
+      tags:
+        foo: bar
+    register: ec2
