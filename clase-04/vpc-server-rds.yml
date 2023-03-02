@@ -1,0 +1,169 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Ejemplo de plantilla de CloudFormation para crear VPC, subnets, instancias EC2, RDS Aurora MySQL y grupos de seguridad."
+
+Resources:
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: "Name"
+          Value: "MiVPC"
+          
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+        - Key: "Name"
+          Value: "MiIG"
+          
+  VPCGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+          
+  PublicSubnet1:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-east-1a"
+      CidrBlock: "10.0.1.0/24"
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: "SubnetPublica1"
+          
+  PublicSubnet2:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-east-1b"
+      CidrBlock: "10.0.2.0/24"
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: "SubnetPublica2"
+          
+  PrivateSubnet1:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-east-1a"
+      CidrBlock: "10.0.3.0/24"
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: "SubnetPrivada1"
+          
+  PrivateSubnet2:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-east-1b"
+      CidrBlock: "10.0.4.0/24"
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: "SubnetPrivada2"
+          
+  MyKeyPair:
+    Type: "AWS::EC2::KeyPair"
+    Properties:
+      KeyName: "my-key-pair"
+      KeyType: rsa
+
+# Acá hay otro comentario
+  EC2Instance: # Acá estoy creando una instancia
+    Type: "AWS::EC2::Instance"  
+    Properties:
+      ImageId: "ami-0c94855ba95c71c99"
+      InstanceType: "t2.small"
+      KeyName: !Ref MyKeyPair
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref EC2SecurityGroup
+          SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: "Name"
+          Value: "MiInstanciaEC2"
+          
+  DBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupName: "MiDBSubnetGroup"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      DBSubnetGroupDescription: "Subnets para RDS Aurora"
+          
+  DBSecurityGroup:
+    Type: "AWS::RDS::DBSecurityGroup"
+    Properties:
+      DBSecurityGroupName: "MiDBSecurityGroup"
+      GroupDescription: "Permite acceso a la instancia EC2 y a RDS"
+      EC2SecurityGroups:
+        - !Ref EC2SecurityGroup
+      Tags:
+        - Key: "Name"
+          Value: "MiDBSecurityGroup"
+          
+  DBCluster:
+    Type: "AWS::RDS::DBCluster"
+    Properties:
+      Engine: "aurora-mysql"
+      EngineVersion: "5.7.mysql_aurora.2.09.1"
+      DatabaseName: "MiBaseDeDatos"
+      DBClusterIdentifier: "MiDBCluster"
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+      MasterUsername: "admin"
+      MasterUserPassword: "mysecretpassword"
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: "00:00-01:00"
+      Tags:
+        - Key: "Name"
+          Value: "MiDBCluster"
+
+  EC2SecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Security group for EC2 instance"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: "Name"
+          Value: "EC2SecurityGroup"
+
+  DBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Security group for RDS instance"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref RDSIngressSecurityGroup
+      Tags:
+        - Key: "Name"
+          Value: "DBSecurityGroup"
+
+  RDSIngressSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Security group for RDS instance ingress"
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: "RDSIngressSecurityGroup"
