@@ -1,0 +1,10 @@
+token
+mail_list
+
+# Local .terraform directories
+**/.terraform/*
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
