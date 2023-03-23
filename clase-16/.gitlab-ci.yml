@@ -1,0 +1,46 @@
+image: node:latest
+
+stages:
+  - build
+  - test
+  - deploy
+
+cache:
+  paths:
+    - node_modules/
+
+install-dependencies:
+  stage: build
+  script:
+    - npm install
+    - npm install mocha
+    - echo “Install dependencies”
+  artifacts:
+    paths:
+      - node_modules/
+  only:
+    - develop
+  tags:
+    - node
+
+testing-testing:
+  stage: test
+  script: npm test
+  tags:
+    - node
+
+
+deploy-develop:
+  stage: deploy
+  script:
+    - echo "Deploying application in develop..."
+  only:
+    - develop
+
+deploy-production:
+  stage: deploy
+  script:
+    - echo "Deploying application in production..."
+  only:
+    - main
+  when: manual
