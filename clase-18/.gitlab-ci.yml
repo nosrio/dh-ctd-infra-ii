@@ -1,0 +1,95 @@
+stages:
+  - build
+  - test
+  - deploy
+  - release
+
+cache:
+  paths:
+    - todo-list/node_modules/
+    - terraform/docker-instances/.terraform/
+
+build-node:
+  stage: build
+  image: node:18-alpine
+  script:
+    - cd todo-list
+    - npm install --only=dev
+    - npm run build
+  rules:
+  - changes:
+      - todo-list/*
+
+test-node:
+  stage: test
+  image: node:18-alpine
+  script:
+    - cd todo-list
+    - npm run test
+
+test-terraform:
+  stage: test
+  image: 
+    name: hashicorp/terraform:1.4.2
+    entrypoint:
+      - '/usr/bin/env'
+      - 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+  script:
+    - cd terraform/docker-instances
+    - terraform init -backend-config "bucket=dh-terraform-state" -backend-config "key=nicolas.osorio/docker-instances/terraform.tfstate" -backend-config "region=us-east-1"
+    - terraform validate
+  rules:
+  - changes:
+      - terraform/docker-instances/*
+
+deploy-node:
+  stage: deploy
+  image: docker:stable
+  services:
+    - docker:dind
+    - name: docker:dind
+      alias: thedockerhost
+  variables:
+    DOCKER_HOST: tcp://thedockerhost:2375/
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t soynico/todo-list:$CI_COMMIT_SHORT_SHA .
+    - docker tag soynico/todo-list:$CI_COMMIT_SHORT_SHA soynico/todo-list:latest
+    - docker push soynico/todo-list
+
+deploy-terraform:
+  stage: deploy
+  image: 
+    name: hashicorp/terraform:1.4.2
+    entrypoint:
+      - '/usr/bin/env'
+      - 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+  script:
+    - cd terraform/docker-instances
+    - terraform init -backend-config "bucket=dh-terraform-state" -backend-config "key=nicolas.osorio/docker-instances/terraform.tfstate" -backend-config "region=us-east-1"
+    - terraform plan -out out.tfplan
+    - terraform apply out.tfplan
+  rules:
+  - changes:
+      - terraform/docker-instances/*
+
+release-node:
+  stage: release
+  image: 
+    name: hashicorp/terraform:1.4.2
+    entrypoint:
+      - '/usr/bin/env'
+      - 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+  before_script:
+    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - > /dev/null
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+  script:
+    - cd terraform/docker-instances
+    - terraform init -backend-config "bucket=dh-terraform-state" -backend-config "key=nicolas.osorio/docker-instances/terraform.tfstate" -backend-config "region=us-east-1"
+    - ssh -o StrictHostKeyChecking=no ubuntu@$(terraform output | grep docker-instance-ip | awk -F'"' '{print $2}') 'if [[ $(docker ps | grep todo-list) ]];then docker stop todo-list;fi; docker run -d --rm -p3000:3000 --name todo-list --pull always soynico/todo-list:latest'
+  when: manual
